@@ -1,0 +1,36 @@
+# Secrets and local auth
+cookies.txt
+cookies*.txt
+*.cookies
+*.cookie
+
+# Generated outputs
+runs/
+knowledge/
+.video2md-work/
+
+# Media and transcripts that may be private or large
+*.mp4
+*.webm
+*.m4a
+*.mp3
+*.wav
+*.srt
+*.vtt
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+
+# Local tooling
+.env
+.env.*
+.DS_Store
+Thumbs.db

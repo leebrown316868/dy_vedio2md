@@ -1,0 +1,114 @@
+---
+name: capturing-douyin-video-notes
+description: Use when a user wants to turn Douyin video URLs into local Markdown notes, especially from a fresh Windows/Codex environment with missing repo, downloaders, FFmpeg, ASR, cookies, or shell setup.
+---
+
+# Capturing Douyin Video Notes
+
+## Overview
+
+This skill is the runbook for going from "I only have a Douyin URL" to a local Markdown knowledge note. Treat the human as the source of intent and authorization; let Codex/programs handle environment setup, open-source tool installation, download, transcription, summarization, and verification.
+
+## First Response
+
+Say the boundary clearly:
+
+> I can set up the repo and open-source tools, then run download, audio extraction, transcription, summarization, and Markdown output. You only need to provide the video URL, approve installs or browser access when needed, and provide a local cookie file if Douyin requires login. I will not print cookie values.
+
+Collect only missing inputs:
+
+1. Douyin URL.
+2. Workspace path, or default to `E:\project\video2md`.
+3. Permission before network installs, Git clone, browser-cookie access, or closing Edge/Chrome.
+4. Cookie file path only after no-cookie download fails.
+5. Knowledge output directory or default `knowledge`.
+
+## Zero-Environment Bootstrap
+
+Use this order for a fresh Windows user:
+
+1. Locate Git Bash. Prefer `E:\Git\usr\bin\bash.exe`; otherwise find Git for Windows or ask permission to install it.
+2. Clone the project if missing:
+   `git clone https://github.com/leebrown316868/dy_vedio2md.git <workspace>`.
+3. Use an absolute Python path. In Codex Desktop, prefer workspace dependency Python; otherwise locate `py`, `python`, or ask permission to install Python 3.10+.
+4. Install project package only if needed: `python -m pip install -e <workspace>`.
+5. Prepare DouK/TikTokDownloader under `C:/tmp/video2md-run/DouK-Downloader`; clone it if missing and install dependencies into `C:/tmp/video2md-run/douk-deps`.
+6. Locate FFmpeg. If missing, ask permission to install with WinGet or another local package manager.
+7. Prepare ASR dependencies under `C:/tmp/video2md-run/asr-deps`; default to faster-whisper CPU `base` or `small`, `int8`.
+8. Run one unauthenticated download attempt. If it fails, ask the human to save Douyin `Cookie` to a local `cookies.txt`.
+9. Run the pipeline with absolute `--run-dir` and `--output-dir`.
+10. Verify `source.mp4`, `audio.wav`, `transcript.txt`, and the final Markdown note exist.
+
+## Windows Command Rules
+
+Assume two parsers: PowerShell first, then Bash/Python.
+
+- For human-facing PowerShell commands, prefer stop-parsing:
+
+```powershell
+& 'E:\Git\usr\bin\bash.exe' --% -lc "cd /e/project/video2md && ..."
+```
+
+- Inside Codex shell tools, still start every command with `E:\Git\usr\bin\bash.exe`.
+- Do not assume `python` exists in Git Bash; use absolute paths.
+- Avoid inline Python, here-docs, and long templates inside one shell line.
+- Avoid spaces in operational `--title`; use the video id first, then edit the Markdown title later.
+- Prefer env vars, command files, or wrapper scripts over complex `--transcribe-command` strings.
+
+## Human vs Program
+
+| Step | Human provides | Codex/program does |
+| --- | --- | --- |
+| Source | Video URL and goal | Clone repo, create run directory |
+| Installs | Approval for network/package actions | Install open-source tools locally |
+| Auth | Cookie file or browser-cookie permission | Use cookies without printing values |
+| Browser lock | Permission before closing browser | Retry cookie read after approval |
+| Download | Nothing after auth is valid | Use DouK first, yt-dlp only as fallback |
+| Transcription | Language/model preference if desired | Extract audio and run ASR |
+| Summary | Focus/style judgment | Generate Markdown note |
+| Verification | Final usefulness judgment | Check files and report paths |
+
+## Cookie Handling
+
+If no-cookie download fails, guide the user to DevTools `Network` -> a real Douyin request -> `Headers` -> `Request Headers` -> `Cookie`. If they show `Payload`, redirect them to `Headers`.
+
+Never ask the user to paste secrets into chat. Ask them to save a local file such as `cookies.txt`. Inspect only existence, size, and cookie names; never print values.
+
+## DouK Rules
+
+- Use absolute paths for `run-dir`, `output-dir`, and DouK `root`, such as `E:/project/video2md/runs/<id>`.
+- Clean temporary DouK settings that contain cookie values.
+- If DouK says the item already exists but the requested run dir has no MP4, search `DouK-Downloader/Volume/Download/**/*.mp4`, copy the newest matching file to `<run-dir>/source.mp4`, and resume from FFmpeg.
+
+## Open-Source User Flow
+
+When the repo is public, guide a beginner like this:
+
+1. "Install/use this skill in Codex."
+2. "Give me the Douyin URL."
+3. Codex clones `leebrown316868/dy_vedio2md`, installs open-source dependencies with approval, and checks paths.
+4. Human logs into Douyin and saves `cookies.txt` only if needed.
+5. Codex runs the pipeline and reports local artifact paths.
+
+The human should not need to know DouK, FFmpeg, ASR, shell quoting, or Python path details.
+
+## Program Improvements To Prefer
+
+When editing the project, prioritize:
+
+- Resolve all downloader paths to absolute paths.
+- Fallback-search DouK default downloads when target dir is empty.
+- Add `--transcribe-command-file` or env defaults.
+- Add `--title-file` or default operational title to video id.
+- Print parsed paths and argument diagnostics, never secrets.
+
+## Red Flags
+
+- Retrying the same downloader command without new auth.
+- Treating `blob:` as a source MP4.
+- Printing cookie values or request headers.
+- Asking the user to paste cookies into chat.
+- Closing a browser without explicit permission.
+- Passing relative paths to DouK.
+- Debugging argparse before checking PowerShell splitting.
+- Assuming Git Bash has `python`.

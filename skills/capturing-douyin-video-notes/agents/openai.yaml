@@ -1,0 +1,6 @@
+interface:
+  display_name: "Capturing Douyin Video Notes"
+  short_description: "Douyin video to Markdown notes"
+  default_prompt: "Use $capturing-douyin-video-notes to turn this Douyin video into a local Markdown knowledge note."
+policy:
+  allow_implicit_invocation: true
