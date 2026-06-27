@@ -28,6 +28,7 @@ __pycache__/
 htmlcov/
 .venv/
 venv/
+*.egg-info/
 
 # Local tooling
 .env
