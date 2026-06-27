@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -23,7 +24,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run the Douyin -> audio -> transcript -> Markdown workflow.")
     parser.add_argument("url")
     parser.add_argument("--title", default=DEFAULT_TITLE)
-    parser.add_argument("--cookie-file", type=Path, default=Path("cookies.txt"))
+    parser.add_argument("--cookie-file", type=Path)
     parser.add_argument("--douk-dir", type=Path, default=Path("C:/tmp/video2md-run/DouK-Downloader"))
     parser.add_argument("--run-dir", type=Path, default=Path("runs/douyin"))
     parser.add_argument("--output-dir", type=Path, default=Path("knowledge"))
@@ -31,26 +32,49 @@ def main() -> int:
     parser.add_argument("--douk-pythonpath", default=os.getenv("VIDEO2MD_DOUK_PYTHONPATH", ""))
     parser.add_argument("--ffmpeg", default="ffmpeg")
     parser.add_argument("--transcribe-command", required=True)
+    parser.add_argument("--transcribe-pythonpath", default=os.getenv("VIDEO2MD_TRANSCRIBE_PYTHONPATH", ""))
+    parser.add_argument(
+        "--transcribe-env",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="Environment variable for the transcribe command. Repeat for multiple values.",
+    )
     parser.add_argument("--summarize-command")
     args = parser.parse_args()
 
+    args.cookie_file = _resolve_path(args.cookie_file) if args.cookie_file else None
+    args.douk_dir = _resolve_path(args.douk_dir)
+    args.run_dir = _resolve_path(args.run_dir)
+    args.output_dir = _resolve_path(args.output_dir)
+
     cookie = _read_cookie(args.cookie_file)
-    _check_cookie(cookie)
+    if cookie:
+        _check_cookie(cookie)
+    else:
+        print("no cookie file supplied; trying Douyin download without cookies")
     _check_douk_dir(args.douk_dir)
 
     args.run_dir.mkdir(parents=True, exist_ok=True)
+    args.output_dir.mkdir(parents=True, exist_ok=True)
     source_video = args.run_dir / "source.mp4"
     audio = args.run_dir / "audio.wav"
     transcript = args.run_dir / "transcript.txt"
 
     output_root = args.run_dir / "douk-output"
+    output_root.mkdir(parents=True, exist_ok=True)
     before = set(_media_files(output_root))
     _run_douk(args.douk_dir, args.python, args.douk_pythonpath, cookie, args.url, output_root)
-    video = _newest_video(output_root, before)
+    video = _find_downloaded_video(output_root, before, [args.douk_dir / "Volume" / "Download"])
     shutil.copyfile(video, source_video)
 
     _run([args.ffmpeg, "-y", "-i", str(source_video), "-vn", "-ac", "1", "-ar", "16000", str(audio)])
-    _run_template(args.transcribe_command, audio=audio, transcript=transcript)
+    _run_template(
+        args.transcribe_command,
+        env=_command_env(os.environ, args.transcribe_pythonpath, args.transcribe_env),
+        audio=audio,
+        transcript=transcript,
+    )
 
     result = run_pipeline(
         source=args.url,
@@ -66,7 +90,13 @@ def main() -> int:
     return 0
 
 
-def _read_cookie(path: Path) -> str:
+def _resolve_path(path: Path) -> Path:
+    return path.expanduser().resolve()
+
+
+def _read_cookie(path: Path | None) -> str:
+    if path is None:
+        return ""
     if not path.exists():
         raise SystemExit(f"Cookie file not found: {path}")
     text = path.read_text(encoding="utf-8", errors="ignore").strip()
@@ -91,10 +121,12 @@ def _check_cookie(text: str) -> None:
 
 
 def _check_douk_dir(path: Path) -> None:
-    if not path.joinpath("main.py").exists() or not path.joinpath("Volume", "settings.json").exists():
+    if not path.joinpath("main.py").exists():
+        raise SystemExit("DouK-Downloader not found. Clone it, then pass --douk-dir.")
+    if not path.joinpath("Volume", "settings.json").exists():
         raise SystemExit(
-            "DouK-Downloader not found or not initialized. "
-            "Clone it and run it once, then pass --douk-dir."
+            "DouK-Downloader is not initialized: missing Volume/settings.json. "
+            "Run DouK once interactively to select language and accept its disclaimer, then retry."
         )
 
 
@@ -110,7 +142,7 @@ def _run_douk(
     data = json.loads(settings.read_text(encoding="utf-8-sig"))
     old_cookie = data.get("cookie", "")
     try:
-        data["cookie"] = cookie.split(":", 1)[1].strip() if cookie.lower().startswith("cookie:") else cookie
+        data["cookie"] = _normalize_cookie(cookie) if cookie else ""
         data["root"] = str(output_root)
         data["folder_name"] = "Download"
         data["download"] = True
@@ -151,13 +183,46 @@ def _newest_video(root: Path, before: set[Path]) -> Path:
     return max(candidates, key=lambda p: p.stat().st_mtime)
 
 
+def _find_downloaded_video(output_root: Path, before: set[Path], fallback_roots: list[Path]) -> Path:
+    try:
+        return _newest_video(output_root, before)
+    except SystemExit as primary_error:
+        for fallback in fallback_roots:
+            try:
+                video = _newest_video(fallback, set())
+            except SystemExit:
+                continue
+            print(f"using fallback DouK download: {video}")
+            return video
+        raise primary_error
+
+
+def _normalize_cookie(cookie: str) -> str:
+    return cookie.split(":", 1)[1].strip() if cookie.lower().startswith("cookie:") else cookie
+
+
 def _run(command: list[str]) -> None:
     subprocess.run(command, check=True)
 
 
-def _run_template(template: str, **values: Path) -> None:
+def _command_env(base: Mapping[str, str], pythonpath: str, pairs: list[str]) -> dict[str, str]:
+    env = dict(base)
+    if pythonpath:
+        existing = env.get("PYTHONPATH")
+        env["PYTHONPATH"] = pythonpath + (os.pathsep + existing if existing else "")
+    for pair in pairs:
+        if "=" not in pair:
+            raise SystemExit(f"--transcribe-env must be KEY=VALUE, got: {pair}")
+        key, value = pair.split("=", 1)
+        if not key:
+            raise SystemExit("--transcribe-env key must not be empty")
+        env[key] = value
+    return env
+
+
+def _run_template(template: str, env: dict[str, str] | None = None, **values: Path) -> None:
     command = template.format(**{key: str(value) for key, value in values.items()})
-    subprocess.run(command, shell=True, check=True)
+    subprocess.run(command, shell=True, check=True, env=env)
 
 
 if __name__ == "__main__":

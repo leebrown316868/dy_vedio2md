@@ -97,7 +97,7 @@ python -m video2md "https://www.douyin.com/video/xxx" \
 
 ## 抖音快速上手
 
-推荐路线是 `DouK-Downloader + cookies.txt + video2md`。这条路线已经实测跑通，比直接用 `yt-dlp` 更适合中国抖音。
+推荐路线是 `DouK-Downloader + video2md`。脚本会先尝试无 Cookie 下载；如果抖音要求登录态，再让你提供本地 `cookies.txt`。这条路线已经实测跑通，比直接用 `yt-dlp` 更适合中国抖音。
 
 ### 1. 准备 DouK-Downloader
 
@@ -113,6 +113,8 @@ python main.py
 首次运行按提示选择语言并同意免责声明，让它生成 `Volume/settings.json`。
 
 ### 2. 准备 Cookie
+
+先不准备 Cookie 也可以。脚本默认会先尝试无 Cookie 下载。只有下载失败并提示需要登录态时，再按下面方式准备。
 
 不要把 Cookie 发到聊天或远程服务。只放到本机文件：
 
@@ -134,18 +136,25 @@ python main.py
 
 ### 3. 一条命令跑完整流程
 
-下面命令会自动检查 Cookie、调用 DouK 下载、复制视频、FFmpeg 抽音频、faster-whisper 转写、生成 Markdown。请把 `<workspace>`、`<tool-cache>`、`<ffmpeg>` 换成你机器上的实际绝对路径；如果使用 Skill，让当前 AI 先探测这些路径，不要直接照抄示例路径。
+下面命令会调用 DouK 下载、复制视频、FFmpeg 抽音频、faster-whisper 转写、生成 Markdown。请把 `<workspace>`、`<tool-cache>`、`<ffmpeg>`、`<python>` 换成你机器上的实际绝对路径；如果使用 Skill，让当前 AI 先探测这些路径，不要直接照抄示例路径。
 
 ```bash
 python scripts/run_douyin_once.py "https://www.douyin.com/video/<id>" \
   --title "<id>" \
-  --cookie-file cookies.txt \
   --douk-dir "<tool-cache>/DouK-Downloader" \
   --douk-pythonpath "<tool-cache>/douk-deps" \
   --run-dir "<workspace>/runs/<id>" \
   --output-dir "<workspace>/knowledge" \
   --ffmpeg "<ffmpeg>" \
+  --transcribe-pythonpath "<tool-cache>/asr-deps" \
+  --transcribe-env "HF_HOME=<tool-cache>/hf-cache" \
   --transcribe-command '<python> scripts/transcribe_faster_whisper.py "{audio}" "{transcript}" --model base --device cpu --compute-type int8 --language auto'
+```
+
+如果无 Cookie 下载失败，再加：
+
+```bash
+--cookie-file "<workspace>/cookies.txt"
 ```
 
 默认推荐让当前 AI 读取 `runs/<id>/transcript.txt` 后总结并完善 Markdown。如果你明确想使用本地 Ollama，也可以再加总结命令：
@@ -186,6 +195,8 @@ python scripts/run_douyin_once.py "https://www.douyin.com/video/<id>" \
 - `yt-dlp` 即使拿到 Cookie，也可能因为抖音接口/签名变化失败；DouK-Downloader 当前更稳。
 - 页面能播放不代表能直接下载，抖音网页里的视频常是 `blob:` 地址。
 - 第一次转写需要安装 ASR 依赖并下载模型。
+- Windows 下不要把 `set PYTHONPATH=...&& ...` 放进 `--transcribe-command`。优先用 `--transcribe-pythonpath` 和 `--transcribe-env KEY=VALUE`。
+- DouK 首次运行必须生成 `Volume/settings.json`。如果缺这个文件，先运行一次 DouK 选择语言并同意免责声明。
 
 ### 推荐边界
 
@@ -199,6 +210,8 @@ python scripts/run_douyin_once.py "https://www.douyin.com/video/<id>" \
 
 不推荐让程序默认读取浏览器 Cookie、绕过 DPAPI、自动处理验证码或上传登录态。
 
+脚本层面支持先无 Cookie 尝试；只有失败后才需要人类提供本地 `cookies.txt`。
+
 ## 命令模板
 
 支持的占位符：
@@ -209,6 +222,13 @@ python scripts/run_douyin_once.py "https://www.douyin.com/video/<id>" \
 - 总结命令：`{transcript}`、`{summary}`
 
 路径里可能有空格时，请在模板里给占位符加引号，例如 `"{audio}"`。
+
+转写命令需要额外环境变量时，不要把 Windows `set` 或 Bash `export` 拼进命令模板。使用：
+
+```bash
+--transcribe-pythonpath "<tool-cache>/asr-deps"
+--transcribe-env "HF_HOME=<tool-cache>/hf-cache"
+```
 
 也可以用环境变量固定默认命令：
 

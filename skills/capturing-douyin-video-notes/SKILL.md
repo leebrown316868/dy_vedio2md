@@ -35,7 +35,7 @@ Use this order for a fresh Windows user:
 5. Choose a tool cache directory such as `%LOCALAPPDATA%\video2md-run` on Windows. Prepare DouK/TikTokDownloader under `<tool-cache>\DouK-Downloader`; clone it if missing and install dependencies into `<tool-cache>\douk-deps`.
 6. Locate FFmpeg. If missing, ask permission to install with WinGet or another local package manager.
 7. Prepare ASR dependencies under `<tool-cache>\asr-deps`; default to faster-whisper CPU `base` or `small`, `int8`.
-8. Run one unauthenticated download attempt. If it fails, ask the human to save Douyin `Cookie` to a local `cookies.txt`.
+8. Run one unauthenticated download attempt. Do not pass `--cookie-file` yet. If it fails, ask the human to save Douyin `Cookie` to a local `cookies.txt`, then retry with `--cookie-file <cookie-file>`.
 9. Run the pipeline with absolute `--run-dir` and `--output-dir`.
 10. Read `transcript.txt` and summarize with the current AI assistant. Do not default to Ollama or any local LLM.
 11. Verify `source.mp4`, `audio.wav`, `transcript.txt`, and the final Markdown note exist.
@@ -54,7 +54,8 @@ Assume two parsers: PowerShell first, then Bash/Python.
 - Do not assume `python` exists in Git Bash; use absolute paths.
 - Avoid inline Python, here-docs, and long templates inside one shell line.
 - Avoid spaces in operational `--title`; use the video id first, then edit the Markdown title later.
-- Prefer env vars, command files, or wrapper scripts over complex `--transcribe-command` strings.
+- Do not put `set PYTHONPATH=...&&`, `export PYTHONPATH=...`, or other shell-specific environment syntax inside `--transcribe-command`. Use `--transcribe-pythonpath <path>` and `--transcribe-env KEY=VALUE`.
+- Prefer command files or wrapper scripts over complex `--transcribe-command` strings.
 - Use concrete paths only after discovering them on the user's machine. In user-facing prompts, say `<workspace>`, `<tool-cache>`, or `<cookie-file>` until the actual path is known.
 
 ## Human vs Program
@@ -79,8 +80,10 @@ Never ask the user to paste secrets into chat. Ask them to save a local file suc
 ## DouK Rules
 
 - Use absolute paths for `run-dir`, `output-dir`, and DouK `root`, such as `<workspace>/runs/<id>` after resolving `<workspace>` on the user's machine.
+- DouK must be initialized before automation. If `Volume/settings.json` is missing, run DouK once interactively to select language and accept its disclaimer, then retry.
 - Clean temporary DouK settings that contain cookie values.
 - If DouK says the item already exists but the requested run dir has no MP4, search `DouK-Downloader/Volume/Download/**/*.mp4`, copy the newest matching file to `<run-dir>/source.mp4`, and resume from FFmpeg.
+- If piped/menu input into DouK fails, do not keep sending the same menu sequence. Verify initialization, use absolute output paths, check DouK's default download directory, then ask the human before switching to a visible/manual DouK initialization step.
 
 ## Summary Rule
 
@@ -106,6 +109,7 @@ When editing the project, prioritize:
 
 - Resolve all downloader paths to absolute paths.
 - Fallback-search DouK default downloads when target dir is empty.
+- Keep `--cookie-file` optional so the first attempt can run without Cookie.
 - Add `--transcribe-command-file` or env defaults.
 - Add `--title-file` or default operational title to video id.
 - Print parsed paths and argument diagnostics, never secrets.
@@ -120,3 +124,5 @@ When editing the project, prioritize:
 - Passing relative paths to DouK.
 - Debugging argparse before checking PowerShell splitting.
 - Assuming Git Bash has `python`.
+- Encoding PYTHONPATH inside the transcribe shell command.
+- Requiring Cookie before trying the no-cookie path.
