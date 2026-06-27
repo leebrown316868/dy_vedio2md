@@ -4,15 +4,19 @@ import argparse
 from pathlib import Path
 
 
-def main() -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Transcribe audio with faster-whisper.")
     parser.add_argument("audio", type=Path)
     parser.add_argument("transcript", type=Path)
     parser.add_argument("--model", default="small")
-    parser.add_argument("--device", default="auto")
-    parser.add_argument("--compute-type", default="default")
+    parser.add_argument("--device", default="cpu")
+    parser.add_argument("--compute-type", default="int8")
     parser.add_argument("--language", default="auto")
-    args = parser.parse_args()
+    return parser
+
+
+def main() -> int:
+    args = build_parser().parse_args()
 
     try:
         from faster_whisper import WhisperModel

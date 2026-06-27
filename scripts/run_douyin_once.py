@@ -24,7 +24,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run the Douyin -> audio -> transcript -> Markdown workflow.")
     parser.add_argument("url")
     parser.add_argument("--title", default=DEFAULT_TITLE)
-    parser.add_argument("--cookie-file", type=Path)
+    parser.add_argument("--cookie-file", type=Path, required=True)
     parser.add_argument("--douk-dir", type=Path, default=Path("C:/tmp/video2md-run/DouK-Downloader"))
     parser.add_argument("--run-dir", type=Path, default=Path("runs/douyin"))
     parser.add_argument("--output-dir", type=Path, default=Path("knowledge"))
@@ -43,16 +43,13 @@ def main() -> int:
     parser.add_argument("--summarize-command")
     args = parser.parse_args()
 
-    args.cookie_file = _resolve_path(args.cookie_file) if args.cookie_file else None
+    args.cookie_file = _resolve_path(args.cookie_file)
     args.douk_dir = _resolve_path(args.douk_dir)
     args.run_dir = _resolve_path(args.run_dir)
     args.output_dir = _resolve_path(args.output_dir)
 
     cookie = _read_cookie(args.cookie_file)
-    if cookie:
-        _check_cookie(cookie)
-    else:
-        print("no cookie file supplied; trying Douyin download without cookies")
+    _check_cookie(cookie)
     _check_douk_dir(args.douk_dir)
 
     args.run_dir.mkdir(parents=True, exist_ok=True)
@@ -96,7 +93,7 @@ def _resolve_path(path: Path) -> Path:
 
 def _read_cookie(path: Path | None) -> str:
     if path is None:
-        return ""
+        raise SystemExit("Cookie file is required: pass --cookie-file <path>")
     if not path.exists():
         raise SystemExit(f"Cookie file not found: {path}")
     text = path.read_text(encoding="utf-8", errors="ignore").strip()

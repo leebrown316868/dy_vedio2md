@@ -35,8 +35,11 @@ class DouyinScriptTest(unittest.TestCase):
 
             self.assertEqual(_newest_video(root, {old}), new)
 
-    def test_read_cookie_allows_no_cookie_path_for_first_attempt(self):
-        self.assertEqual(_read_cookie(None), "")
+    def test_read_cookie_requires_cookie_path(self):
+        with self.assertRaises(SystemExit) as error:
+            _read_cookie(None)
+
+        self.assertIn("Cookie file is required", str(error.exception))
 
     def test_command_env_adds_pythonpath_and_key_value_pairs_without_shell_syntax(self):
         env = _command_env(
