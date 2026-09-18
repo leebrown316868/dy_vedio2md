@@ -16,16 +16,17 @@ Inspect the URL before any setup:
 | Domain | Platform | Downloader | Cookie |
 |---|---|---|---|
 | `douyin.com` / `*.douyin.com` | 抖音 | DouK-Downloader | **Mandatory** |
-| `bilibili.com` / `b23.tv` | B站 | yt-dlp | **Optional** (try without first) |
+| `bilibili.com` / `b23.tv` | B站 | yt-dlp | **Optional**, with Firefox fallback |
 
 If the URL matches neither, stop and tell the user this skill currently only supports Douyin and Bilibili.
 
 ## Non-Negotiable Rules
 
 - **Cookie-first (Douyin)**: Douyin requires cookies. Do not waste a no-cookie attempt. Ask for a local cookie file path before download.
-- **Cookie-optional (Bilibili)**: try yt-dlp without cookies first. If the download fails with an auth/anti-bot error (HTTP 403, HTTP 412, "需要登录", "Precondition Failed"), ask for a Bilibili cookie file path.
+- **Cookie-optional (Bilibili)**: try yt-dlp without cookies first. If the download fails with an auth/anti-bot error (HTTP 403, HTTP 412, "需要登录", "Precondition Failed"), escalate in this order: (1) yt-dlp nightly, (2) `--cookies-from-browser firefox`, (3) ask for a local cookie file. Firefox cookie extraction works on Windows; Chromium/Edge does not.
 - **Approval UX**: do not ask the user to type `y`, `yes`, `1`, or any confirmation text. Any consent must be requested through the agent's ask/approval mechanism.
 - **Current-AI summary**: after ASR creates `transcript.txt`, the AI currently executing this skill reads it and writes the summary. Do not default to Ollama/local LLM.
+- **Note = summary only**: the final Markdown note contains the AI-written summary. Never embed the raw transcript or an ASR term-fix/correction table in it — `transcript.txt` stays in the run dir as the canonical transcript, and the note stays a knowledge artifact rather than a transcript archive.
 - **CPU transcription**: faster-whisper must run with `--device cpu --compute-type int8` unless the user explicitly requests GPU and confirms CUDA works.
 - **Content filename**: do not leave the final note named only as an id. Derive a short title from the AI analysis, sanitize it, rename the Markdown file, and report the final path.
 - **Completion report**: always tell the user where process files, installed dependencies, caches, transcript, audio, video, cookies, and final notes are located.
@@ -38,14 +39,14 @@ If the URL is Douyin, say:
 
 If the URL is Bilibili, say:
 
-> I can set up the open-source tools, download the Bilibili video (no cookies needed for public videos), extract audio, transcribe on CPU, summarize it myself, and save a renamed Markdown note. I will ask for approvals through the agent UI, not by making you type confirmations. At the end I will report where all process files and outputs were written.
+> I can set up the open-source tools, download the Bilibili video (no cookies needed for public videos; if B站 blocks it I can read your Firefox cookies automatically), extract audio, transcribe on CPU, summarize it myself, and save a renamed Markdown note. I will ask for approvals through the agent UI, not by making you type confirmations. At the end I will report where all process files and outputs were written.
 
 If the user hasn't provided a URL yet, say a combined version and ask for the URL first.
 
 Collect only:
 
 1. Video URL (Douyin or Bilibili).
-2. For Douyin: local cookie file path, such as `<workspace>\cookies.txt`. For Bilibili: only ask if the no-cookie attempt fails.
+2. For Douyin: local cookie file path, such as `<workspace>\cookies.txt`. For Bilibili: only ask if both the no-cookie attempt and the Firefox fallback fail.
 3. Workspace path, or suggest a neutral default such as `%USERPROFILE%\video2md`.
 4. Knowledge output directory, or default to `<workspace>\knowledge`.
 5. Agent approvals for network installs, browser access, closing browser, or GUI/manual initialization.
@@ -88,7 +89,13 @@ Parse the URL. Determine Douyin vs Bilibili. All subsequent steps branch on this
    pip install --upgrade --pre yt-dlp
    ```
    Then retry the same download command from step 3. If nightly also fails, proceed to step 5.
-5. **If download still fails (HTTP 403, HTTP 412, "需要登录", auth/anti-bot errors):**
+5. **If download still fails (HTTP 403, HTTP 412, "需要登录", auth/anti-bot errors) — try Firefox cookies before asking the user for anything:**
+   ```bash
+   yt-dlp --cookies-from-browser firefox -f "bestvideo[height<=1080]+bestaudio/best[height<=1080]" -o "<run-dir>\source.mp4" "<url>"
+   ```
+   This works on Windows and needs no manual export — it only requires the user to be logged into bilibili.com in Firefox. Confirm extraction actually happened by looking for `Extracted N cookies from firefox` in `-v` output.
+   **Account caveat**: the Firefox session may belong to a *different* B站 account than the user's cookie file. Public videos are unaffected, but never silently switch accounts for login-gated content — surface which account is in use.
+6. **If Firefox cookies are unavailable** (no Firefox, profile not logged into B站, `isLogin=False`, still HTTP 412):
    Ask the user for a Bilibili cookie file, then:
    - **Cookie format auto-conversion**: yt-dlp `--cookies` requires Netscape format (tab-separated fields with domain/path/expiry). The user's raw `Cookie:` header value (`key=value; key=value`) is NOT Netscape format. Always convert:
      ```python
@@ -116,9 +123,9 @@ Parse the URL. Determine Douyin vs Bilibili. All subsequent steps branch on this
      ```bash
      yt-dlp --cookies "<netscape_cookie_path>" -f "bestvideo[height<=1080]+bestaudio/best[height<=1080]" -o "<run-dir>\source.mp4" "<url>"
      ```
-6. **Do NOT use `--cookies-from-browser` on Windows**: Edge/Chrome cookie databases are often locked (browser running) or fail DPAPI decryption. Always ask the user for a local cookie file instead.
-7. B站 cookie file key names to verify: `SESSDATA`, `bili_jct`, `buvid3`. Print names/count only, never values.
-8. yt-dlp outputs directly to the specified path — no fallback search needed.
+7. **Chromium/Edge is a permanent dead end on Windows — Firefox is not.** Chrome 127+ uses App-Bound Encryption, so no external process can decrypt its cookies; `--cookies-from-browser chrome|edge` fails with `Failed to decrypt with DPAPI`, and yt-dlp has no plan to fix it (issue #15401). Firefox keeps cookies unencrypted in `cookies.sqlite`, which extracts reliably (verified on Windows 11).
+8. B站 cookie file key names to verify: `SESSDATA`, `bili_jct`, `buvid3`. Print names/count only, never values.
+9. yt-dlp outputs directly to the specified path — no fallback search needed.
 
 ### Step 3: Audio Extraction (Both Platforms)
 
@@ -138,6 +145,12 @@ ffmpeg -y -i "<run-dir>\source.mp4" -vn -ac 1 -ar 16000 "<run-dir>\audio.wav"
 
 1. Read `transcript.txt`, summarize with the current AI, write/update Markdown.
 2. Rename the Markdown file using a content-derived title (see Filename Rule).
+
+The note holds **only** the summary: metadata header, the AI-written analysis, and any
+quotable lines. Do NOT append the raw transcript, and do NOT append a table of ASR
+corrections. If ASR garbled a term and the correction matters to a claim in the summary,
+just fix the claim inline (optionally noting the uncertainty) — the full list belongs
+nowhere in the note. `transcript.txt` in the run dir is where verbatim wording lives.
 
 ### Step 6: Completion Report (Both Platforms)
 
@@ -177,7 +190,7 @@ End every successful run with a compact report. Use the template matching the ac
 | Download tool | yt-dlp (`<tool-cache>\ytdlp-deps` or system) |
 | ASR deps | `<tool-cache>\asr-deps` |
 | ASR/model cache | `<tool-cache>\hf-cache` |
-| Cookie file | `<cookie-file>` or "none (public video)" |
+| Cookie source | Firefox profile via `--cookies-from-browser firefox`, or `<cookie-file>`, or "none (public video)" |
 | Run dir | `<workspace>\runs\<id>` |
 | Source video | `<run-dir>\source.mp4` |
 | Audio | `<run-dir>\audio.wav` |
@@ -222,8 +235,8 @@ After summarizing, infer a concise Chinese title from the actual content, not fr
 - If yt-dlp is not installed, install it to `<tool-cache>\ytdlp-deps` (isolated) or use system pip.
 - **yt-dlp nightly fallback**: B站 API changes frequently. If stable yt-dlp fails with HTTP 412 (Precondition Failed / wbi sign), upgrade to nightly with `pip install --upgrade --pre yt-dlp` and retry before asking for cookies. Nightly often has fixes that stable hasn't released yet.
 - **Cookie format conversion is mandatory**: yt-dlp `--cookies` requires Netscape format (tab-separated: `domain flag path secure expiry name value`). The raw `Cookie:` header value from browser DevTools (`key=value; key=value`) will be rejected with `'does not look like a Netscape format cookies file'`. Always convert using the script in Step 2B.5. Write the converted file next to the original as `<cookie-file>.netscape.txt`.
-- **Avoid `--cookies-from-browser` on Windows**: Edge locks its cookie DB while running; Chrome DPAPI decryption often fails. These are systemic Windows limitations, not transient errors. Don't waste attempts — go straight to asking for a local cookie file.
-- If all attempts (stable + nightly + no-cookie, stable + nightly + cookie-file) fail: report the error and stop. Do not loop.
+- **`--cookies-from-browser` on Windows: Firefox works, Chromium does not.** `--cookies-from-browser firefox` reads Firefox's unencrypted `cookies.sqlite` and succeeds reliably (verified on Windows 11). Chrome/Edge use App-Bound Encryption (Chrome 127+) that no external process can decrypt — a permanent dead end, so don't spend attempts on it, but do try Firefox *before* asking the user for a cookie file.
+- If all attempts (no-cookie, nightly, Firefox cookies, local cookie file) fail: report the error and stop. Do not loop.
 - B站 short links (`b23.tv`) are supported — yt-dlp resolves them automatically.
 
 ## Red Flags
@@ -235,9 +248,11 @@ After summarizing, infer a concise Chinese title from the actual content, not fr
 - Printing cookie values or request headers.
 - Running faster-whisper with `device=auto` or without `--device cpu --compute-type int8`.
 - Leaving final note named as a raw video id.
+- Embedding the raw transcript or an ASR correction table in the final note.
 - Saying only "saved to ..." without reporting process file locations.
 - Assuming Git Bash has `python` or that paths match the developer's machine.
 - Using DouK for a Bilibili URL or yt-dlp for a Douyin URL.
-- Using `--cookies-from-browser` on Windows — it fails when browsers are running (Edge lock) or can't decrypt (Chrome DPAPI).
+- Using `--cookies-from-browser chrome` or `--cookies-from-browser edge` on Windows — App-Bound Encryption makes this permanently undecryptable. (Firefox is fine and preferred.)
+- Asking the user for a manual Bilibili cookie file before trying `--cookies-from-browser firefox`.
 - Passing raw Cookie header format directly to `yt-dlp --cookies` without converting to Netscape format.
 - Giving up after stable yt-dlp fails without trying nightly first.
