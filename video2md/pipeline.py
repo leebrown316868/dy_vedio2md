@@ -131,8 +131,12 @@ def _render_note(title: str, source: str, transcript: str, summary: str | None) 
         "",
     ]
     if summary:
+        # The note is a knowledge artifact, not a transcript archive: once a summary
+        # exists the raw transcript stays in work_dir/transcript.txt.
         parts.extend([summary.strip(), ""])
-    parts.extend(["## 转写", "", transcript.strip(), ""])
+    else:
+        # Without a summary the transcript is the only content available.
+        parts.extend(["## 转写", "", transcript.strip(), ""])
     return "\n".join(parts)
 
 

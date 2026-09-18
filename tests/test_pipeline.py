@@ -61,7 +61,9 @@ class PipelineTest(unittest.TestCase):
             self.assertIn("# 测试视频", note)
             self.assertIn("https://www.douyin.com/video/example", note)
             self.assertIn("## 总结", note)
-            self.assertIn("第一段内容。", note)
+            # The note is summary-only: the raw transcript must not be embedded.
+            self.assertNotIn("第一段内容。", note)
+            self.assertNotIn("## 转写", note)
 
     def test_pipeline_accepts_existing_transcript_without_media_steps(self):
         with tempfile.TemporaryDirectory() as tmp:
